@@ -1,13 +1,20 @@
 import { useState } from 'react';
 import { Link } from 'react-router';
-import { API_URL } from './api.js';
+import { apiFetch, apiPost } from './api.js';
 
-function Review({ review }) {
+// onDelete is only passed for admins, so only they see the button
+// (hiding it is a courtesy -- the API is what actually says no)
+function Review({ review, onDelete }) {
 	return (
 		// faded until the server confirms it
 		<div className="card w-100 mt-3" style={{ opacity: review.pending ? 0.5 : 1 }}>
 			<div className="card-header">
 				<em>{review.author}</em>
+				{onDelete && !review.pending && (
+					<button type="button" className="close" aria-label="Delete review" onClick={() => onDelete(review)}>
+						&times;
+					</button>
+				)}
 			</div>
 			<div className="card-body">
 				<p>{review.content}</p>
@@ -16,8 +23,8 @@ function Review({ review }) {
 	);
 }
 
-export function ItemView({ item, reviews }) {
-	const [blank, setBlank] = useState({ author: false, content: false });
+export function ItemView({ item, reviews, user }) {
+	const [blank, setBlank] = useState({ content: false });
 
 	function checkBlank(event) {
 		const { name, value } = event.target;
@@ -31,17 +38,17 @@ export function ItemView({ item, reviews }) {
 	async function submitReview(event) {
 		event.preventDefault();
 		const form = event.currentTarget;
-		const author = form.elements.author.value;
 		const content = form.elements.content.value;
 
 		// no point optimistically adding something we already know the server will reject
-		const nowBlank = { author: author.trim() === '', content: content.trim() === '' };
+		const nowBlank = { content: content.trim() === '' };
 		setBlank(nowBlank);
-		if (nowBlank.author || nowBlank.content) return;
+		if (nowBlank.content) return;
 
 		// optimistic update: show the review right away with a temporary id, clear the form
+		// (the name shown is a guess until the server confirms; the server decides the real author)
 		const tempId = `temp-${Date.now()}`;
-		setList((current) => [{ id: tempId, author, content, pending: true }, ...current]);
+		setList((current) => [{ id: tempId, author: user.username, content, pending: true }, ...current]);
 		setSaveErrors([]);
 		form.reset();
 
@@ -49,19 +56,21 @@ export function ItemView({ item, reviews }) {
 		// (functional setList because other submits may have changed the list meanwhile)
 		function rollback(errors) {
 			setList((current) => current.filter((review) => review.id !== tempId));
-			form.elements.author.value = author;
 			form.elements.content.value = content;
 			setSaveErrors(errors);
 		}
 
 		try {
-			const response = await fetch(`${API_URL}/api/item_view/${item.id}/reviews`, {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ author, content }),
-			});
+			// no author sent: the session cookie says who we are
+			const response = await apiPost(`/api/item_view/${item.id}/reviews`, { content });
 			const body = await response.json();
 
+			// a third kind of failure: the page thinks we're logged in, but the session
+			// expired or was logged out in another tab
+			if (response.status === 401) {
+				rollback(['Your login has expired. Log in again to post your review.']);
+				return;
+			}
 			if (!response.ok) {
 				rollback(body.errors);
 				return;
@@ -75,8 +84,31 @@ export function ItemView({ item, reviews }) {
 		}
 	}
 
+	// not optimistic: deleting is rare, and putting a review back after it vanished would be confusing
+	async function deleteReview(review) {
+		setList((current) => current.map((r) => (r.id === review.id ? { ...r, pending: true } : r)));
+		setSaveErrors([]);
+
+		function restore(errors) {
+			setList((current) => current.map((r) => (r.id === review.id ? review : r)));
+			setSaveErrors(errors);
+		}
+
+		try {
+			const response = await apiFetch(`/api/reviews/${review.id}`, { method: 'DELETE' });
+			// 404: someone else already deleted it, which is what we wanted anyway
+			if (!response.ok && response.status !== 404) {
+				const body = await response.json();
+				restore(body.errors);
+				return;
+			}
+			setList((current) => current.filter((r) => r.id !== review.id));
+		} catch {
+			restore(['Could not delete the review. Please try again.']);
+		}
+	}
+
 	const messages = [...saveErrors];
-	if (blank.author) messages.push('Name is required.');
 	if (blank.content) messages.push('Review is required.');
 
 	return (
@@ -108,44 +140,42 @@ export function ItemView({ item, reviews }) {
 						<div className="card-body">
 							{/* No method: there's no page route to POST to anymore. Without JavaScript,
 							    nothing on this site works at all. */}
-							<form onSubmit={submitReview}>
-								{messages.length > 0 && (
-									<div className="alert alert-danger">
-										<ul className="mb-0">
-											{messages.map((message) => (
-												<li key={message}>{message}</li>
-											))}
-										</ul>
+							{user ? (
+								<form onSubmit={submitReview}>
+									{messages.length > 0 && (
+										<div className="alert alert-danger">
+											<ul className="mb-0">
+												{messages.map((message) => (
+													<li key={message}>{message}</li>
+												))}
+											</ul>
+										</div>
+									)}
+									<div className="form-group">
+										<label>Add your review, {user.username}!</label>
+										<textarea
+											className="form-control mb-1"
+											placeholder="Review"
+											name="content"
+											onBlur={checkBlank}
+										/>
 									</div>
-								)}
-								<div className="form-group">
-									<label>Add your review!</label>
-									<input
-										className="form-control mb-1"
-										placeholder="Name"
-										name="author"
-										onBlur={checkBlank}
-									/>
-								</div>
-								<div className="form-group">
-									<textarea
-										className="form-control mb-1"
-										placeholder="Review"
-										name="content"
-										onBlur={checkBlank}
-									/>
-								</div>
-								<div className="form-group">
-									<button type="submit" className="btn btn-primary">
-										Submit
-									</button>
-								</div>
-							</form>
+									<div className="form-group">
+										<button type="submit" className="btn btn-primary">
+											Submit
+										</button>
+									</div>
+								</form>
+							) : (
+								<p className="mb-0">
+									<Link to="/login">Log in</Link> to write a review.
+								</p>
+							)}
 						</div>
 					</div>
 					
 					{list.map((review) => (
-						<Review key={review.id} review={review} />
+						<Review key={review.id} review={review} onDelete={user?.admin ? deleteReview : null} />
 					))}
 				</div>
 			</div>

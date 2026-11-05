@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { API_URL } from '../api.js';
+import { apiFetch } from '../api.js';
 import { Items } from '../Items.jsx';
 
 // whatever function is default exported is considered the render function
@@ -19,7 +19,7 @@ export default function ItemsRoute() {
 		// so the awaiting happens in an async function defined and called at once (an IIFE)
 		(async function load() {
 			try {
-				const response = await fetch(`${API_URL}/api/items`);
+				const response = await apiFetch('/api/items');
 				if (!response.ok) throw new Error(`HTTP ${response.status}`);
 				const body = await response.json();
 				if (!ignore) setData(body);

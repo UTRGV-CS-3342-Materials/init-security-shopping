@@ -6,4 +6,6 @@ export default [
 	index('routes/home.jsx'),
 	route('items', 'routes/items.jsx'),
 	route('item_view/:item_id', 'routes/item_view.jsx'),
+	route('login', 'routes/login.jsx'),
+	route('register', 'routes/register.jsx'),
 ];

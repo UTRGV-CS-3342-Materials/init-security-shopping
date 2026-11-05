@@ -18,7 +18,9 @@ const app = express();
 // The browser app comes from a different origin (port 8080), so the browser won't let it
 // read our replies unless we say it may. A JSON POST also sends a "preflight" OPTIONS request
 // first to ask permission; cors() answers that here, before the fake latency below.
-app.use(cors({ origin: 'http://localhost:8080' }));
+// credentials: the browser only sends cookies cross-origin (and only lets the page see the reply)
+// if we say so here AND the fetch asks with credentials: 'include'.
+app.use(cors({ origin: 'http://localhost:8080', credentials: true }));
 app.use(express.json());
 app.use((req, res, next) => setTimeout(next, FAKE_LATENCY_MS));
 
