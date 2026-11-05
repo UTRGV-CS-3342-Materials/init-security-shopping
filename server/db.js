@@ -2,7 +2,8 @@
 
 import Database from 'better-sqlite3';
 
-const db = new Database(process.env.DB_FILE ?? 'shopping.sqlite');
+// exported so the User model can run its own queries
+export const db = new Database(process.env.DB_FILE ?? 'shopping.sqlite');
 
 export function getItems() {
 	return db.prepare('SELECT * FROM item').all();

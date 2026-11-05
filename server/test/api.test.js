@@ -38,3 +38,9 @@ test('rejects a blank review, and saves nothing', async () => {
 	const [after] = queryDb('SELECT count(*) AS count FROM review');
 	assert.equal(after.count, before.count);
 });
+
+test('rejects a review with no author', async () => {
+	const response = await newClient().post('/api/item_view/6/reviews', { content: 'Nice.' });
+
+	assert.equal(response.status, 422);
+});
